@@ -1,0 +1,628 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>城市洪涝风险分析与应急决策系统</title>
+    <link href="https://cdn.bootcdn.net/ajax/libs/twitter-bootstrap/5.1.3/css/bootstrap.min.css" rel="stylesheet">
+    <link href="https://cdn.bootcdn.net/ajax/libs/leaflet/1.7.1/leaflet.css" rel="stylesheet">
+    <link href="https://cdn.bootcdn.net/ajax/libs/font-awesome/5.15.4/css/all.min.css" rel="stylesheet">
+    <style>
+        #map {
+            height: 600px;
+            width: 100%;
+            border-radius: 8px;
+        }
+        .card {
+            margin-bottom: 20px;
+            border-radius: 8px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        }
+        .alert-panel {
+            max-height: 300px;
+            overflow-y: auto;
+        }
+        .legend {
+            background: white;
+            padding: 10px;
+            border-radius: 5px;
+            box-shadow: 0 1px 4px rgba(0,0,0,0.2);
+        }
+        .legend-item {
+            margin: 5px 0;
+        }
+        .legend-color {
+            display: inline-block;
+            width: 20px;
+            height: 20px;
+            margin-right: 5px;
+            border-radius: 50%;
+        }
+        .route-info {
+            padding: 10px;
+            background: #f8f9fa;
+            border-radius: 5px;
+            margin-bottom: 10px;
+        }
+        .citizen-marker {
+            width: 10px;
+            height: 10px;
+            border-radius: 50%;
+            background-color: #3388ff;
+            border: 2px solid #fff;
+        }
+        .citizen-evacuated {
+            background-color: #28a745;
+        }
+        .rescue-team-marker {
+            width: 12px;
+            height: 12px;
+            border-radius: 50%;
+            background-color: #dc3545;
+            border: 2px solid #fff;
+        }
+        .nav-tabs .nav-link {
+            border-radius: 8px 8px 0 0;
+        }
+        .tab-content {
+            border: 1px solid #dee2e6;
+            border-top: none;
+            padding: 20px;
+            border-radius: 0 0 8px 8px;
+        }
+    </style>
+</head>
+<body>
+    <nav class="navbar navbar-expand-lg navbar-dark bg-primary">
+        <div class="container-fluid">
+            <a class="navbar-brand" href="#">城市洪涝风险分析与应急决策系统</a>
+            <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbarNav">
+                <span class="navbar-toggler-icon"></span>
+            </button>
+            <div class="collapse navbar-collapse" id="navbarNav">
+                <ul class="navbar-nav">
+                    <li class="nav-item">
+                        <a class="nav-link active" data-bs-toggle="tab" href="#risk-analysis">风险分析</a>
+                    </li>
+                    <li class="nav-item">
+                        <a class="nav-link" data-bs-toggle="tab" href="#simulation">智能体模拟</a>
+                    </li>
+                    <li class="nav-item">
+                        <a class="nav-link" data-bs-toggle="tab" href="#evacuation">疏散规划</a>
+                    </li>
+                    <li class="nav-item">
+                        <a class="nav-link" data-bs-toggle="tab" href="#emergency">应急决策</a>
+                    </li>
+                </ul>
+            </div>
+        </div>
+    </nav>
+
+    <div class="container-fluid mt-4">
+        <div class="tab-content">
+            <!-- 风险分析标签页 -->
+            <div class="tab-pane fade show active" id="risk-analysis">
+                <div class="row">
+                    <div class="col-md-3">
+                        <div class="card">
+                            <div class="card-header">
+                                <h5 class="card-title mb-0">风险评估参数</h5>
+                            </div>
+                            <div class="card-body">
+                                <form id="risk-analysis-form">
+                                    <div class="mb-3">
+                                        <label class="form-label">地形数据</label>
+                                        <input type="file" class="form-control" accept=".tif,.geojson">
+                                    </div>
+                                    <div class="mb-3">
+                                        <label class="form-label">人口密度数据</label>
+                                        <input type="file" class="form-control" accept=".csv,.geojson">
+                                    </div>
+                                    <div class="mb-3">
+                                        <label class="form-label">基础设施数据</label>
+                                        <input type="file" class="form-control" accept=".geojson">
+                                    </div>
+                                    <button type="submit" class="btn btn-primary">开始分析</button>
+                                </form>
+                            </div>
+                        </div>
+                        <div class="card">
+                            <div class="card-header">
+                                <h5 class="card-title mb-0">风险统计</h5>
+                            </div>
+                            <div class="card-body">
+                                <div id="risk-stats"></div>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="col-md-9">
+                        <div class="card">
+                            <div class="card-header">
+                                <h5 class="card-title mb-0">风险地图</h5>
+                            </div>
+                            <div class="card-body">
+                                <div id="map"></div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- 智能体模拟标签页 -->
+            <div class="tab-pane fade" id="simulation">
+                <div class="row">
+                    <div class="col-md-3">
+                        <div class="card">
+                            <div class="card-header">
+                                <h5 class="card-title mb-0">模拟参数</h5>
+                            </div>
+                            <div class="card-body">
+                                <form id="simulation-form">
+                                    <div class="mb-3">
+                                        <label class="form-label">模拟区域大小</label>
+                                        <div class="row">
+                                            <div class="col">
+                                                <input type="number" class="form-control" id="width" value="50" min="10" max="100">
+                                                <small class="text-muted">宽度</small>
+                                            </div>
+                                            <div class="col">
+                                                <input type="number" class="form-control" id="height" value="50" min="10" max="100">
+                                                <small class="text-muted">高度</small>
+                                            </div>
+                                        </div>
+                                    </div>
+                                    <div class="mb-3">
+                                        <label class="form-label">智能体数量</label>
+                                        <div class="row">
+                                            <div class="col">
+                                                <input type="number" class="form-control" id="num-citizens" value="100" min="10">
+                                                <small class="text-muted">市民数量</small>
+                                            </div>
+                                            <div class="col">
+                                                <input type="number" class="form-control" id="num-rescue-teams" value="5" min="1">
+                                                <small class="text-muted">救援队数量</small>
+                                            </div>
+                                        </div>
+                                    </div>
+                                    <button type="submit" class="btn btn-primary">开始模拟</button>
+                                </form>
+                                <div class="simulation-controls mt-3">
+                                    <button id="play-pause" class="btn btn-secondary" disabled>
+                                        <i class="fas fa-play"></i> 播放
+                                    </button>
+                                    <button id="reset" class="btn btn-secondary" disabled>
+                                        <i class="fas fa-undo"></i> 重置
+                                    </button>
+                                </div>
+                                <div id="simulation-progress" class="progress mt-3">
+                                    <div class="progress-bar" role="progressbar" style="width: 0%"></div>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="card">
+                            <div class="card-header">
+                                <h5 class="card-title mb-0">模拟统计</h5>
+                            </div>
+                            <div class="card-body">
+                                <div id="simulation-stats"></div>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="col-md-9">
+                        <div class="card">
+                            <div class="card-header">
+                                <h5 class="card-title mb-0">模拟视图</h5>
+                            </div>
+                            <div class="card-body">
+                                <div id="simulation-map"></div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- 疏散规划标签页 -->
+            <div class="tab-pane fade" id="evacuation">
+                <div class="row">
+                    <div class="col-md-3">
+                        <div class="card">
+                            <div class="card-header">
+                                <h5 class="card-title mb-0">疏散路径规划</h5>
+                            </div>
+                            <div class="card-body">
+                                <form id="evacuation-form">
+                                    <div class="mb-3">
+                                        <label class="form-label">选择起点</label>
+                                        <select class="form-select" id="start-point">
+                                            <option value="">请选择人群聚集点</option>
+                                        </select>
+                                    </div>
+                                    <div class="mb-3">
+                                        <label class="form-label">疏散人数</label>
+                                        <input type="number" class="form-control" id="population" min="1">
+                                    </div>
+                                    <div class="mb-3">
+                                        <label class="form-label">最大路径数</label>
+                                        <input type="number" class="form-control" id="max-routes" value="3" min="1" max="5">
+                                    </div>
+                                    <button type="submit" class="btn btn-primary">生成疏散路径</button>
+                                </form>
+                            </div>
+                        </div>
+                        <div class="card">
+                            <div class="card-header">
+                                <h5 class="card-title mb-0">路况更新</h5>
+                            </div>
+                            <div class="card-body">
+                                <form id="traffic-form">
+                                    <div class="mb-3">
+                                        <label class="form-label">选择道路</label>
+                                        <select class="form-select" id="road-select">
+                                            <option value="">请选择道路</option>
+                                        </select>
+                                    </div>
+                                    <div class="mb-3">
+                                        <label class="form-label">路况状态</label>
+                                        <select class="form-select" id="road-status">
+                                            <option value="normal">通畅</option>
+                                            <option value="congested">拥堵</option>
+                                            <option value="closed">封闭</option>
+                                        </select>
+                                    </div>
+                                    <button type="submit" class="btn btn-warning">更新路况</button>
+                                </form>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="col-md-9">
+                        <div class="card">
+                            <div class="card-header">
+                                <h5 class="card-title mb-0">疏散路径地图</h5>
+                            </div>
+                            <div class="card-body">
+                                <div id="evacuation-map"></div>
+                            </div>
+                        </div>
+                        <div class="card">
+                            <div class="card-header">
+                                <h5 class="card-title mb-0">路径详情</h5>
+                            </div>
+                            <div class="card-body">
+                                <div id="routes-details"></div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- 应急决策标签页 -->
+            <div class="tab-pane fade" id="emergency">
+                <div class="row">
+                    <div class="col-md-3">
+                        <div class="card">
+                            <div class="card-header">
+                                <h5 class="card-title mb-0">场景信息</h5>
+                            </div>
+                            <div class="card-body">
+                                <form id="emergency-form">
+                                    <div class="mb-3">
+                                        <label class="form-label">洪水等级 (0-1)</label>
+                                        <input type="number" class="form-control" id="flood-level" min="0" max="1" step="0.1">
+                                    </div>
+                                    <div class="mb-3">
+                                        <label class="form-label">受影响人口</label>
+                                        <input type="number" class="form-control" id="affected-population" min="0">
+                                    </div>
+                                    <div class="mb-3">
+                                        <label class="form-label">可用资源</label>
+                                        <div class="row">
+                                            <div class="col">
+                                                <input type="number" class="form-control" id="rescue-teams" value="5" min="0">
+                                                <small class="text-muted">救援队</small>
+                                            </div>
+                                            <div class="col">
+                                                <input type="number" class="form-control" id="boats" value="10" min="0">
+                                                <small class="text-muted">救援艇</small>
+                                            </div>
+                                        </div>
+                                    </div>
+                                    <div class="mb-3">
+                                        <label class="form-label">基础设施状态 (0-1)</label>
+                                        <div class="row">
+                                            <div class="col">
+                                                <input type="number" class="form-control" id="road-status" value="0.8" min="0" max="1" step="0.1">
+                                                <small class="text-muted">道路</small>
+                                            </div>
+                                            <div class="col">
+                                                <input type="number" class="form-control" id="power-status" value="0.9" min="0" max="1" step="0.1">
+                                                <small class="text-muted">电力</small>
+                                            </div>
+                                        </div>
+                                    </div>
+                                    <button type="submit" class="btn btn-primary">获取决策建议</button>
+                                </form>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="col-md-9">
+                        <div class="card">
+                            <div class="card-header">
+                                <h5 class="card-title mb-0">决策建议</h5>
+                            </div>
+                            <div class="card-body">
+                                <div id="emergency-advice" class="alert alert-info" style="display: none;"></div>
+                            </div>
+                        </div>
+                        <div class="card">
+                            <div class="card-header">
+                                <h5 class="card-title mb-0">实时监控</h5>
+                            </div>
+                            <div class="card-body">
+                                <div class="alert-panel">
+                                    <div id="alerts"></div>
+                                </div>
+                                <hr>
+                                <div class="row">
+                                    <div class="col-md-6">
+                                        <div id="water-levels"></div>
+                                    </div>
+                                    <div class="col-md-6">
+                                        <div id="rainfall"></div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script src="https://cdn.bootcdn.net/ajax/libs/jquery/3.6.0/jquery.min.js"></script>
+    <script src="https://cdn.bootcdn.net/ajax/libs/twitter-bootstrap/5.1.3/js/bootstrap.bundle.min.js"></script>
+    <script src="https://cdn.bootcdn.net/ajax/libs/leaflet/1.7.1/leaflet.js"></script>
+    <script>
+        // 初始化地图
+        const map = L.map('map').setView([39.9042, 116.4074], 12);
+        L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png').addTo(map);
+
+        // 复制地图到其他标签页
+        const simulationMap = L.map('simulation-map').setView([39.9042, 116.4074], 12);
+        L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png').addTo(simulationMap);
+
+        const evacuationMap = L.map('evacuation-map').setView([39.9042, 116.4074], 12);
+        L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png').addTo(evacuationMap);
+
+        // 图层管理
+        const layers = {
+            populationClusters: L.layerGroup().addTo(evacuationMap),
+            evacuationPoints: L.layerGroup().addTo(evacuationMap),
+            routes: L.layerGroup().addTo(evacuationMap),
+            riskAreas: L.layerGroup().addTo(map),
+            simulation: {
+                citizens: L.layerGroup().addTo(simulationMap),
+                rescueTeams: L.layerGroup().addTo(simulationMap)
+            }
+        };
+
+        // 风险分析表单提交
+        $('#risk-analysis-form').on('submit', function(e) {
+            e.preventDefault();
+            const formData = new FormData(this);
+            
+            $.ajax({
+                url: '/api/analyze_risk',
+                method: 'POST',
+                data: formData,
+                processData: false,
+                contentType: false,
+                success: function(response) {
+                    if (response.status === 'success') {
+                        updateRiskMap(response.risk_levels);
+                        updateRiskStats(response.risk_levels);
+                    }
+                }
+            });
+        });
+
+        // 智能体模拟表单提交
+        $('#simulation-form').on('submit', function(e) {
+            e.preventDefault();
+            const data = {
+                width: parseInt($('#width').val()),
+                height: parseInt($('#height').val()),
+                num_citizens: parseInt($('#num-citizens').val()),
+                num_rescue_teams: parseInt($('#num-rescue-teams').val()),
+                steps: 100
+            };
+
+            $.ajax({
+                url: '/api/run_simulation',
+                method: 'POST',
+                contentType: 'application/json',
+                data: JSON.stringify(data),
+                success: function(response) {
+                    if (response.status === 'success') {
+                        simulationData = response.simulation_data;
+                        window.gridSize = response.grid_size;
+                        
+                        // 启用控制按钮
+                        $('#play-pause, #reset').prop('disabled', false);
+                        
+                        // 开始模拟
+                        runSimulation();
+                    }
+                }
+            });
+        });
+
+        // 疏散规划表单提交
+        $('#evacuation-form').on('submit', function(e) {
+            e.preventDefault();
+            const data = {
+                start_point_id: $('#start-point').val(),
+                population: parseInt($('#population').val()),
+                max_routes: parseInt($('#max-routes').val())
+            };
+
+            $.ajax({
+                url: '/api/plan_evacuation',
+                method: 'POST',
+                contentType: 'application/json',
+                data: JSON.stringify(data),
+                success: function(response) {
+                    if (response.status === 'success') {
+                        updateEvacuationRoutes(response.routes);
+                        updateEvacuationStats(response.stats);
+                    }
+                }
+            });
+        });
+
+        // 应急决策表单提交
+        $('#emergency-form').on('submit', function(e) {
+            e.preventDefault();
+            const data = {
+                flood_level: parseFloat($('#flood-level').val()),
+                affected_population: parseInt($('#affected-population').val()),
+                available_resources: {
+                    rescue_teams: parseInt($('#rescue-teams').val()),
+                    boats: parseInt($('#boats').val())
+                },
+                infrastructure_status: {
+                    roads: parseFloat($('#road-status').val()),
+                    power: parseFloat($('#power-status').val())
+                }
+            };
+
+            $.ajax({
+                url: '/api/get_emergency_advice',
+                method: 'POST',
+                contentType: 'application/json',
+                data: JSON.stringify(data),
+                success: function(response) {
+                    if (response.status === 'success') {
+                        displayEmergencyAdvice(response.advice);
+                    }
+                }
+            });
+        });
+
+        // 更新实时数据
+        function updateRealTimeData() {
+            $.get('/api/get_real_time_data', function(response) {
+                if (response.status === 'success') {
+                    const data = response.data;
+                    
+                    // 更新警报
+                    const alertsHtml = data.alerts.map(alert => `
+                        <div class="alert alert-${alert.level}">
+                            <strong>${alert.location}</strong>: ${alert.message}
+                        </div>
+                    `).join('');
+                    $('#alerts').html(alertsHtml);
+                    
+                    // 更新水位
+                    const waterLevelsHtml = `
+                        <h6>水位监测</h6>
+                        <ul class="list-unstyled">
+                            ${Object.entries(data.water_levels).map(([station, level]) => `
+                                <li>${station}: ${level}m</li>
+                            `).join('')}
+                        </ul>
+                    `;
+                    $('#water-levels').html(waterLevelsHtml);
+                    
+                    // 更新降雨量
+                    const rainfallHtml = `
+                        <h6>降雨量监测</h6>
+                        <ul class="list-unstyled">
+                            ${Object.entries(data.rainfall).map(([station, amount]) => `
+                                <li>${station}: ${amount}mm</li>
+                            `).join('')}
+                        </ul>
+                    `;
+                    $('#rainfall').html(rainfallHtml);
+                }
+            });
+        }
+
+        // 定期更新实时数据
+        setInterval(updateRealTimeData, 5000);
+        updateRealTimeData();
+
+        // 辅助函数
+        function updateRiskMap(riskLevels) {
+            layers.riskAreas.clearLayers();
+            riskLevels.risk_zones.forEach(zone => {
+                L.polygon(zone.coordinates, {
+                    color: getColorByRisk(zone.risk_level),
+                    fillColor: getColorByRisk(zone.risk_level),
+                    fillOpacity: 0.3
+                }).addTo(layers.riskAreas);
+            });
+        }
+
+        function updateRiskStats(riskLevels) {
+            const statsHtml = `
+                <p>总体风险等级: ${(riskLevels.overall_risk * 100).toFixed(1)}%</p>
+                <hr>
+                <h6>分项风险</h6>
+                <ul class="list-unstyled">
+                    <li>洪水风险: ${(riskLevels.sub_risks.flood_risk * 100).toFixed(1)}%</li>
+                    <li>基础设施风险: ${(riskLevels.sub_risks.infrastructure_risk * 100).toFixed(1)}%</li>
+                    <li>人口风险: ${(riskLevels.sub_risks.population_risk * 100).toFixed(1)}%</li>
+                </ul>
+            `;
+            $('#risk-stats').html(statsHtml);
+        }
+
+        function updateEvacuationRoutes(routes) {
+            layers.routes.clearLayers();
+            routes.forEach((route, index) => {
+                L.polyline(route.coordinates, {
+                    color: '#007bff',
+                    weight: 3,
+                    opacity: 0.8
+                }).addTo(layers.routes);
+
+                $('#routes-details').append(`
+                    <div class="route-info">
+                        <h6>路径 ${index + 1}</h6>
+                        <p>疏散点: ${route.evacuation_point_id}</p>
+                        <p>分配人数: ${route.assigned_population}</p>
+                        <p>路径长度: ${route.length.toFixed(2)}km</p>
+                        <p>风险等级: ${route.risk_level.toFixed(2)}</p>
+                    </div>
+                `);
+            });
+        }
+
+        function displayEmergencyAdvice(advice) {
+            const adviceHtml = `
+                <h6>风险评估</h6>
+                <p>${advice.risk_assessment}</p>
+                <h6>资源调配建议</h6>
+                <p>${advice.resource_allocation}</p>
+                <h6>疏散策略</h6>
+                <p>${advice.evacuation_strategy}</p>
+                <h6>救援优先级</h6>
+                <p>${advice.rescue_priorities}</p>
+                <h6>通信方案</h6>
+                <p>${advice.communication_plan}</p>
+            `;
+            $('#emergency-advice').html(adviceHtml).show();
+        }
+
+        function getColorByRisk(risk) {
+            if (risk >= 0.8) return '#dc3545';
+            if (risk >= 0.6) return '#ffc107';
+            if (risk >= 0.4) return '#17a2b8';
+            return '#28a745';
+        }
+
+        // 初始化加载
+        loadData();
+    </script>
+</body>
+</html> 
